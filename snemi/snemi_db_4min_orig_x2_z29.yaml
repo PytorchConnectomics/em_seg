@@ -1,0 +1,39 @@
+SYSTEM:
+  NUM_GPUS: 4
+  NUM_CPUS: 8
+MODEL:
+  ARCHITECTURE: 'unet_residual_3d'
+  INPUT_SIZE: [8, 256, 256]
+  OUTPUT_SIZE: [8, 256, 256]
+  IN_PLANES: 1
+  OUT_PLANES: 3
+  LOSS_OPTION: [['WeightedBCE']]
+  TARGET_OPT: ['2']
+  WEIGHT_OPT: [['1']]
+DATASET:
+  IMAGE_NAME: 'img/train-input.tif'
+  LABEL_NAME: 'label/train-labels.tif'
+  INPUT_PATH: '/n/pfister_lab2/Lab/vcg_connectomics/EM/snemi/' # or your own dataset path
+  OUTPUT_PATH: '/n/pfister_lab2/Lab/donglai/snemi/pc/train/'
+  PAD_SIZE: [4, 128, 128]
+  LABEL_EROSION: 1
+SOLVER:
+  LR_SCHEDULER_NAME: "WarmupMultiStepLR"
+  BASE_LR: 0.01
+  ITERATION_STEP: 1
+  ITERATION_SAVE: 5000
+  ITERATION_TOTAL: 50000
+  SAMPLES_PER_BATCH: 16
+INFERENCE:
+  INPUT_SIZE: [8, 256, 256]
+  OUTPUT_SIZE: [8, 256, 256]
+  #IMAGE_NAME: '/n/pfister_lab2/Lab/vcg_connectomics/EM/snemi/img/test-input_df_150_z29.h5' # or path to your test images
+  IMAGE_NAME: 'test-input_z29.h5' # or path to your test images
+  OUTPUT_PATH: './'
+  OUTPUT_NAME: 'aff.h5'
+  PAD_SIZE: [8, 64, 64]
+  AUG_MODE: 'min'
+  AUG_NUM: 4
+  STRIDE: [4, 128, 128]
+  SAMPLES_PER_BATCH: 48
+  OUTPUT_SCALE: [1., 2., 2.]

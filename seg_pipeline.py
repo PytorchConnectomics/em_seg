@@ -60,8 +60,8 @@ class SegPipeline:
                     # writeh5('db.h5', aff)
                     aff = readh5('db.h5')
                     mask_bv, mask_soma = None, None
-                    #mask_bv = None if self.bv_d is None else self.bv_d.getZslice(zz)
-                    #mask_soma = None if self.soma_d is None else self.soma_d.getZslice(zz)
+                    mask_bv = None if self.bv_d is None else self.bv_d.getZslice(zz)
+                    mask_soma = None if self.soma_d is None else self.soma_d.getZslice(zz)
                     # writeh5('db.h5', mask_bv.astype(np.uint8))
                     mask_border = None if self.border_d is None else self.border_d.getZslice(zz)
                     seg, soma_rl = self._affinityToSeg2D(aff, mask_bv, mask_soma, mask_border)
@@ -79,17 +79,17 @@ class SegPipeline:
         aff[aff < ws_low] = 0
         # get external mask
         if mask_bv is not None:
-            aff[:,0] = aff[:,0] * mask_bv
+            aff[:,0] = aff[:,0] * (1 - mask_bv)
         if mask_border is not None:
-            aff[:,0] = aff[:,0] * mask_border
+            aff[:,0] = aff[:,0] * (1 - mask_border)
 
         # initial watershed
-        seg = waterz.watershed(aff, label_nb = np.ones([ws_nb,ws_nb]))
-        soma_rl = np.zeros([1,2])
+        seg = waterz.watershed(aff, label_nb = np.ones([ws_nb,ws_nb]), bg_thres = 1 - ws_low/255.)
+        seg_m = seg.max() + 1
 
         # snap to soma id
+        soma_rl = np.zeros([1,2])
         if mask_soma is not None and mask_soma.any():
-            seg_m = seg.max() + 1
             soma_ids = np.unique(mask_soma[mask_soma>0])
             rl = np.arange(seg_m).astype(self.dtype)
             # need to split sometimes
@@ -101,6 +101,7 @@ class SegPipeline:
                 if len(ii) > 0:
                     rl[ii] = seg_m + i
                     soma_rl[i] = [soma_id, seg_m + i]
+            import pdb; pdb.set_trace()
             # merge soma regions
             seg = rl[seg]
             
@@ -108,7 +109,7 @@ class SegPipeline:
         rg_id, rg_score = waterz.getRegionGraph(aff, seg, 1, rg_m1_func, rebuild=False)
 
         # merge 1: conservative
-        jj = rg_id[rg_score <= rg_m1_thres]
+        jj = rg_id[rg_score <= rg_m1_aff]
         if soma_rl[:,1].any():
             # remove pairs that lead to soma seg to merge
             jj = waterz.somaBFS(jj, soma_rl[soma_rl[:,1]>0, 1])
@@ -118,11 +119,15 @@ class SegPipeline:
         seg[seg < out_l] = out[seg[seg < out_l]]
         
         # merge 2: small size with higher thres [sorted aff]
+        # assume it won't cause merge among neurons
         ui, uc = np.unique(seg[0], return_counts=True)
-        uc_rl = np.zeros(int(ui.max()) + 1, self.dytpe)
+        uc_rl = np.zeros(int(ui.max()) + 1, self.dtype)
         uc_rl[ui] = uc
-        sid = np.argsort(rg_score)
-        out = waterz.merge_id(jj[sid,0], jj[sid,1], score_g[sid], uc_rl, seg_m, rg_m2_aff, rg_m2_size, ws_dust)
+        gid =  (rg_score <= rg_m2_aff)*((uc_rl[rg_id] <= rg_m2_size).sum(axis=1)>0)
+        jj = rg_id[gid]
+        jj_sc = rg_score[gid]
+        sid = np.argsort(jj_sc)
+        out = waterz.merge_id(jj[sid,0], jj[sid,1], jj_sc[sid], uc_rl, seg_m, rg_m2_aff, rg_m2_size, ws_dust)
         out_l = len(out)
         seg[seg < out_l] = out[seg[seg < out_l]]
 

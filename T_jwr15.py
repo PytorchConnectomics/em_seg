@@ -55,5 +55,7 @@ if __name__== "__main__":
     
     pipeline = SegPipeline('data/jwr15.yaml',AffJWR15,MaskJWR15)
     pipeline.setWorkerId(job_id, job_num)
-    if opt == '1': # affinity to 2D zwatershed for whole slice
+    if opt == '0': # build waterz agglomeration
+        rg_id, rg_score = waterz.getRegionGraph(np.zeros([3,1,10,10],np.uint8), np.zeros([1,10,10],np.uint8), 1, pipeline.param_s['SEG2D']['RG_MERGE_FUNC'], rebuild=True)
+    elif opt == '1': # affinity to 2D zwatershed for whole slice
         pipeline.affinityToSeg2D()
