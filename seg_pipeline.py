@@ -66,7 +66,7 @@ class SegPipeline:
                     mask_border = None if self.border_d is None else self.border_d.getZslice(zz)
                     seg, soma_rl = self._affinityToSeg2D(aff, mask_bv, mask_soma, mask_border)
                     writeh5(sn, [seg, soma_rl], ['main','soma_rl'])
-                    import pdb; pdb.set_trace()
+                    #import pdb; pdb.set_trace()
 
     def _affinityToSeg2D(self, aff, mask_bv=None, mask_soma=None, mask_border=None):
         # aff: 3x1xHxW
@@ -101,7 +101,6 @@ class SegPipeline:
                 if len(ii) > 0:
                     rl[ii] = seg_m + i
                     soma_rl[i] = [soma_id, seg_m + i]
-            import pdb; pdb.set_trace()
             # merge soma regions
             seg = rl[seg]
             
