@@ -35,5 +35,6 @@ SEG :
         RG_MERGE2_SIZE : 500 # merge round2: size threshold
         RG_MERGE2_AFF : 127 # merge round2: affinity threshold
         OUTPUT : "seg_2d/%04d.h5" 
+        OUTPUT_IOU : "seg_2d/%04d_iou%s.h5" 
 
 

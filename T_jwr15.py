@@ -53,9 +53,11 @@ if __name__== "__main__":
     job_id = int(sys.argv[2])
     job_num = int(sys.argv[3])
     
-    pipeline = SegPipeline('data/jwr15.yaml',AffJWR15,MaskJWR15)
+    pipeline = SegPipeline('/n/pfister_lab2/Lab/donglai/lib/seg/em100/data/jwr15.yaml', AffJWR15, MaskJWR15)
     pipeline.setWorkerId(job_id, job_num)
     if opt == '0': # build waterz agglomeration
         rg_id, rg_score = waterz.getRegionGraph(np.zeros([3,1,10,10],np.uint8), np.zeros([1,10,10],np.uint8), 1, pipeline.param_s['SEG2D']['RG_MERGE_FUNC'], rebuild=True)
     elif opt == '1': # affinity to 2D zwatershed for whole slice
         pipeline.affinityToSeg2D()
+    elif opt == '1.1': # seg2D to IoU
+        pipeline.seg2DToIou()

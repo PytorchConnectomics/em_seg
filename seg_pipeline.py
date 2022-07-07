@@ -9,7 +9,7 @@ class SegPipeline:
 
         aff_oset = self.param_a['OFFSET']
         aff_st = [self.ran[x][0]-aff_oset[x] for x in range(3)]
-        self.aff_d = aff_class(self.sz, aff_st, self.param_a['CHUNK_SIZE'], self.param_a['FILENAME'])
+        self.aff_d = aff_class(self.sz, aff_st, self.chunk_sz, self.param_a['FILENAME'])
         self.bv_d, self.soma_d, self.border_d = None, None, None
         if 'BLOOD_VESSEL' in self.param_m:
             oset = self.param_m['BLOOD_VESSEL_OFFSET']
@@ -32,14 +32,16 @@ class SegPipeline:
         self.param_s = param['SEG']
         self.param_ws = param
         self.ran = [self.param_d['ZRAN'], self.param_d['YRAN'], self.param_d['XRAN']]
-        
         # global canvas
         self.sz_all = self.param_d['SIZE']
         # output size
         self.sz = [self.ran[x][1]-self.ran[x][0] for x in range(3)]
+        # affinity
+        self.chunk_sz = self.param_a['CHUNK_SIZE']
 
         self.dtype = eval('np.uint%d' % self.param_s['MAX_BIT'])
         self.out_seg2d = self.param_s['OUTPUT_FOLDER'] + self.param_s['SEG2D']['OUTPUT']
+        self.out_seg2d_iou = self.param_s['OUTPUT_FOLDER'] + self.param_s['SEG2D']['OUTPUT_IOU']
         mkdir(self.out_seg2d, 'parent')
 
     def setWorkerId(self, job_id, job_num):
@@ -50,15 +52,15 @@ class SegPipeline:
         return self.param_s['SEG_2D']['OUTPUT'] % z
 
     def affinityToSeg2D(self):
-        for zchunk in self.ran[0][self.job_id::self.job_num]:
+        for zchunk in range(self.ran[0][0],self.ran[0][1],self.chunk_sz[0])[self.job_id::self.job_num]:
             aff_zchunk = self.aff_d.getZchunk(zchunk)
-            for z in range(self.param_a['CHUNK_SIZE'][0]):
+            for z in range(self.chunk_sz[0]):
                 zz = zchunk + z
                 sn = self.out_seg2d % (zz)
                 if not os.path.exists(sn):
-                    #aff = self.aff_d.getZslice(aff_zchunk, [z])
+                    aff = self.aff_d.getZslice(aff_zchunk, [z])
                     # writeh5('db.h5', aff)
-                    aff = readh5('db.h5')
+                    #aff = readh5('db.h5')
                     mask_bv, mask_soma = None, None
                     mask_bv = None if self.bv_d is None else self.bv_d.getZslice(zz)
                     mask_soma = None if self.soma_d is None else self.soma_d.getZslice(zz)
@@ -66,7 +68,22 @@ class SegPipeline:
                     mask_border = None if self.border_d is None else self.border_d.getZslice(zz)
                     seg, soma_rl = self._affinityToSeg2D(aff, mask_bv, mask_soma, mask_border)
                     writeh5(sn, [seg, soma_rl], ['main','soma_rl'])
-                    #import pdb; pdb.set_trace()
+
+    def seg2DToIou(self):
+        for zz in range(self.ran[0][0],self.ran[0][1]-1)[self.job_id::self.job_num]:
+            sn1 = self.out_seg2d % (zz)
+            sn2 = self.out_seg2d % (zz+1)
+            sn_f = self.out_seg2d_iou % (zz, 'f')
+            sn_b = self.out_seg2d_iou % (zz+1, 'b')
+            if not os.path.exists(sn_b):
+                seg1 = readh5(sn1, 'main')[0] 
+                seg2 = readh5(sn2, 'main')[0] 
+                bb1 = self._get_bb_all2d(seg1)
+                bb2 = self._get_bb_all2d(seg2)
+                iou = self._seg_iou2d(seg1, seg2, bb1=bb1, bb2=bb2)
+                writeh5(sn_f, iou)
+                iou = self._seg_iou2d(seg2, seg1, bb1=bb2, bb2=bb1)
+                writeh5(sn_b, iou)
 
     def _affinityToSeg2D(self, aff, mask_bv=None, mask_soma=None, mask_border=None):
         # aff: 3x1xHxW
@@ -131,3 +148,80 @@ class SegPipeline:
         seg[seg < out_l] = out[seg[seg < out_l]]
 
         return seg, soma_rl
+
+    def _seg_iou2d(self, seg1, seg2, ui0=None, bb1=None, bb2=None):
+        # bb1/bb2: first column of indexing, last column of size
+        
+        if bb1 is None:
+            ui,uc = np.unique(seg1,return_counts=True)
+            uc=uc[ui>0];ui=ui[ui>0]
+        else:
+            ui = bb1[:,0]
+            uc = bb1[:,-1]
+
+        if bb2 is None:
+            ui2, uc2 = np.unique(seg2,return_counts=True)
+        else:
+            ui2 = bb2[:,0]
+            uc2 = bb2[:,-1]
+
+        if bb1 is None:
+            if ui0 is None:
+                bb1 = self._get_bb_all2d(seg1, uid=ui)
+                ui0 = ui
+            else:
+                bb1 = self._get_bb_all2d(seg1, uid=ui0)
+        else:
+            if ui0 is None:
+                ui0 = ui
+            else:
+                # make sure the order matches..
+                bb1 = bb1[np.in1d(bb1[:,0], ui0)]
+                ui0 = bb1[:,0] 
+
+        out = np.zeros((len(ui0),5),int)
+        out[:,0] = ui0
+        out[:,2] = uc[np.in1d(ui,ui0)]
+
+        for j,i in enumerate(ui0):
+            bb= bb1[j, 1:]
+            ui3,uc3 = np.unique(seg2[bb[0]:bb[1]+1,bb[2]:bb[3]+1]*(seg1[bb[0]:bb[1]+1,bb[2]:bb[3]+1]==i),return_counts=True)
+            uc3[ui3==0] = 0
+            if (ui3>0).any():
+                out[j,1] = ui3[np.argmax(uc3)]
+                out[j,3] = uc2[ui2==out[j,1]]
+                out[j,4] = uc3.max()
+        return out
+
+    def _get_bb_all2d(self, seg, do_count=False, uid=None):
+        sz = seg.shape
+        assert len(sz)==2
+        if uid is None:
+            uid = np.unique(seg)
+            uid = uid[uid>0]
+        if len(uid) == 0:
+            return np.zeros((1,5+do_count),dtype=np.uint32)
+
+        um = uid.max()
+        out = np.zeros((1+int(um),5+do_count),dtype=np.uint32)
+        out[:,0] = np.arange(out.shape[0])
+        out[:,1] = sz[0]
+        out[:,3] = sz[1]
+        # for each row
+        rids = np.where((seg>0).sum(axis=1)>0)[0]
+        for rid in rids:
+            sid = np.unique(seg[rid])
+            sid = sid[(sid>0)*(sid<=um)]
+            out[sid,1] = np.minimum(out[sid,1],rid)
+            out[sid,2] = np.maximum(out[sid,2],rid)
+        cids = np.where((seg>0).sum(axis=0)>0)[0]
+        for cid in cids:
+            sid = np.unique(seg[:,cid])
+            sid = sid[(sid>0)*(sid<=um)]
+            out[sid,3] = np.minimum(out[sid,3],cid)
+            out[sid,4] = np.maximum(out[sid,4],cid)
+
+        if do_count:
+            ui,uc = np.unique(seg,return_counts=True)
+            out[ui,-1]=uc
+        return out[uid]
