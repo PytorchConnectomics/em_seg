@@ -12,9 +12,10 @@ MASK :
     BLOOD_VESSEL_OFFSET : [13,512,512]
     BLOOD_VESSEL_EROSION : 0
     # need more soma
-    SOMA : "/n/boslfs02/LABS/lichtman_lab/donglai/jwr15/nucleus/cell_db_cb_fix.h5"
-    SOMA_EROSION : 2
-    # SOMA : "/n/boslfs02/LABS/lichtman_lab/donglai/jwr15/nucleus/cell_yl_cb_cc_fix.h5"
+    # SOMA : "/n/boslfs02/LABS/lichtman_lab/donglai/jwr15/nucleus/cell_db_cb_fix.h5"
+    # SOMA_EROSION : 2
+    SOMA : "/n/boslfs02/LABS/lichtman_lab/donglai/jwr15/nucleus/cell_yl_cb_cc_fix.h5"
+    SOMA_EROSION : 0
     SOMA_RATIO : [4,16,16]
     SOMA_OFFSET : [14,0,0]
 
@@ -36,5 +37,6 @@ SEG :
         RG_MERGE2_AFF : 127 # merge round2: affinity threshold
         OUTPUT : "seg_2d/%04d.h5" 
         OUTPUT_IOU : "seg_2d/%04d_iou%s.h5" 
+        OUTPUT_RGZ : "seg_2d/%04d_rgz.h5" 
 
 

@@ -1,7 +1,8 @@
 import os,yaml
 import waterz
 import cc3d
-from T_util import *
+import numpy as np
+from imu.io import readH5, writeH5, mkdir
 
 class SegPipeline:
     def __init__(self, param_file, aff_class, mask_class):
@@ -42,6 +43,7 @@ class SegPipeline:
         self.dtype = eval('np.uint%d' % self.param_s['MAX_BIT'])
         self.out_seg2d = self.param_s['OUTPUT_FOLDER'] + self.param_s['SEG2D']['OUTPUT']
         self.out_seg2d_iou = self.param_s['OUTPUT_FOLDER'] + self.param_s['SEG2D']['OUTPUT_IOU']
+        self.out_seg2d_rgz = self.param_s['OUTPUT_FOLDER'] + self.param_s['SEG2D']['OUTPUT_RGZ']
         mkdir(self.out_seg2d, 'parent')
 
     def setWorkerId(self, job_id, job_num):
@@ -59,15 +61,15 @@ class SegPipeline:
                 sn = self.out_seg2d % (zz)
                 if not os.path.exists(sn):
                     aff = self.aff_d.getZslice(aff_zchunk, [z])
-                    # writeh5('db.h5', aff)
-                    #aff = readh5('db.h5')
+                    # writeH5('db.h5', aff)
+                    #aff = readH5('db.h5')
                     mask_bv, mask_soma = None, None
                     mask_bv = None if self.bv_d is None else self.bv_d.getZslice(zz)
                     mask_soma = None if self.soma_d is None else self.soma_d.getZslice(zz)
-                    # writeh5('db.h5', mask_bv.astype(np.uint8))
+                    # writeH5('db.h5', mask_bv.astype(np.uint8))
                     mask_border = None if self.border_d is None else self.border_d.getZslice(zz)
                     seg, soma_rl = self._affinityToSeg2D(aff, mask_bv, mask_soma, mask_border)
-                    writeh5(sn, [seg, soma_rl], ['main','soma_rl'])
+                    writeH5(sn, [seg, soma_rl, seg.max()], ['main','soma_rl', 'max'])
 
     def seg2DToIou(self):
         for zz in range(self.ran[0][0],self.ran[0][1]-1)[self.job_id::self.job_num]:
@@ -76,14 +78,38 @@ class SegPipeline:
             sn_f = self.out_seg2d_iou % (zz, 'f')
             sn_b = self.out_seg2d_iou % (zz+1, 'b')
             if not os.path.exists(sn_b):
-                seg1 = readh5(sn1, 'main')[0] 
-                seg2 = readh5(sn2, 'main')[0] 
+                seg1 = readH5(sn1, 'main')[0] 
+                seg2 = readH5(sn2, 'main')[0] 
                 bb1 = self._get_bb_all2d(seg1)
                 bb2 = self._get_bb_all2d(seg2)
                 iou = self._seg_iou2d(seg1, seg2, bb1=bb1, bb2=bb2)
-                writeh5(sn_f, iou)
+                writeH5(sn_f, iou)
                 iou = self._seg_iou2d(seg2, seg1, bb1=bb2, bb2=bb1)
-                writeh5(sn_b, iou)
+                writeH5(sn_b, iou)
+
+    def seg2DToRgZ(self):
+        rg_m1_func, rg_m1_aff = self.param_s['SEG2D']['RG_MERGE_FUNC'], self.param_s['SEG2D']['RG_MERGE_AFF']
+        for zchunk in range(self.ran[0][0],self.ran[0][1],self.chunk_sz[0])[self.job_id::self.job_num]:
+            aff_zchunk = self.aff_d.getZchunk(zchunk, True)
+            for z in range(self.chunk_sz[0]):
+                zz = z + zchunk
+                sn1 = self.out_seg2d % (zz)
+                sn2 = self.out_seg2d % (zz+1)
+                sno = self.out_seg2d_rgz % (zz)
+                if not os.path.exists(sno):
+                    if (z+1) % self.chunk_sz[0] == 0: # last slice
+                        if zchunk == self.ran[0][1] - self.chunk_sz[0]:
+                            # not from last chunk
+                            continue
+                        aff_zchunk = self.aff_d.getZchunk(zchunk + self.chunk_sz[0], True)
+                        aff = self.aff_d.getZslice(aff_zchunk, [0], True)
+                    else:
+                        aff = self.aff_d.getZslice(aff_zchunk, [z+1], True)
+                    aff = np.concatenate([np.zeros_like(aff), aff], axis=1)
+                    seg = np.concatenate([readH5(sn1, 'main'), readH5(sn2, 'main')], axis = 0) 
+                    # only z-aff
+                    rg_id, rg_score = waterz.getRegionGraph(aff, seg, 3, rg_m1_func, rebuild=False)
+                    writeH5(sno, [rg_id, rg_score], ['id', 'score'])
 
     def _affinityToSeg2D(self, aff, mask_bv=None, mask_soma=None, mask_border=None):
         # aff: 3x1xHxW
@@ -113,8 +139,9 @@ class SegPipeline:
             soma_rl = np.zeros([len(soma_ids),2],int)
             for i,soma_id in enumerate(soma_ids):
                 ii = np.unique(seg[0][mask_soma==soma_id])
-                # make sure no overlap 
+                # make sure no overlap among somas 
                 ii = ii[(ii>0)*(ii<seg_m)]
+                # remove small olap
                 if len(ii) > 0:
                     rl[ii] = seg_m + i
                     soma_rl[i] = [soma_id, seg_m + i]

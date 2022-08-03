@@ -2,6 +2,18 @@ from imageio import imread, imwrite
 import numpy as np
 import h5py
 
+class FileLoader:
+    def __init__(self, fns = []):
+        self.fid = 0
+        self.fns = fns
+
+    def getFilenames(self):
+        pass
+
+    def getFile(self):
+        self.fid += 1
+        return self.fns[self.fid - 1]
+
 class AffinityLoader:
     def __init__(self, sz=[0,0,0], chunk_st=[0,0,0], chunk_sz=[0,0,0], filename=''):
         # zyx order

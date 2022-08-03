@@ -26,32 +26,39 @@ class MaskJWR15(MaskLoader):
         return self.mask
 
 class AffJWR15(AffinityLoader):
-    def getZchunk(self, z):
+    def getZchunk(self, z, doz=False):
         # yx aff
-        aff_z = [[[None]*2 for x in range(len(self.ran[2]))] for y in range(len(self.ran[1]))]
+        kis = 'zyx' if doz else 'yz'
+        aff_z = [[[None]*len(kis) for x in range(len(self.ran[2]))] for y in range(len(self.ran[1]))]
         for xi, x in enumerate(self.ran[2]):
             for yi, y in enumerate(self.ran[1]):
-                for ki,k in enumerate('yx'):
+                for ki,k in enumerate(kis):
                     tmp = h5py.File(self.filename % (x,y,z,k),'r')
                     aff_z[yi][xi][ki] = tmp[list(tmp)[0]]
         return aff_z
 
-    def getZslice(self, zchunk, zis):
+    def getZslice(self, zchunk, zis, doz=False):
         aff = np.zeros([3, len(zis), self.sz[1], self.sz[2]], np.uint8)
+        kis, koset = range(2), 1
+        if doz:
+            kis, koset = range(3), 0
         for xi,x in enumerate(self.ran[2]):
             for yi,y in enumerate(self.ran[1]):
-                for ki in range(2):
-                    aff[1+ki,:,yi*self.chunk_sz[1]:(yi+1)*self.chunk_sz[1],xi*self.chunk_sz[2]:(xi+1)*self.chunk_sz[2]] = \
+                for ki in kis:
+                    aff[koset+ki,:,yi*self.chunk_sz[1]:(yi+1)*self.chunk_sz[1],xi*self.chunk_sz[2]:(xi+1)*self.chunk_sz[2]] = \
                         np.array(zchunk[yi][xi][ki][zis[0]:zis[-1]+1])
         return aff
 
 
 
 if __name__== "__main__":
+    # sa zw 
     # python T_jwr15.py 0 0 1
     opt = sys.argv[1]
-    job_id = int(sys.argv[2])
-    job_num = int(sys.argv[3])
+    job_id, job_num = 0, 1
+    if len(sys.argv) > 3:
+        job_id = int(sys.argv[2])
+        job_num = int(sys.argv[3])
     
     pipeline = SegPipeline('/n/pfister_lab2/Lab/donglai/lib/seg/em100/data/jwr15.yaml', AffJWR15, MaskJWR15)
     pipeline.setWorkerId(job_id, job_num)
@@ -61,3 +68,5 @@ if __name__== "__main__":
         pipeline.affinityToSeg2D()
     elif opt == '1.1': # seg2D to IoU
         pipeline.seg2DToIou()
+    elif opt == '1.2': # seg2D to rg-z
+        pipeline.seg2DToRgZ()
