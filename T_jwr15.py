@@ -70,3 +70,9 @@ if __name__== "__main__":
         pipeline.seg2DToIou()
     elif opt == '1.2': # seg2D to rg-z
         pipeline.seg2DToRgZ()
+    elif opt == '1.3': # group seg2D by chunk
+        pipeline.seg2DToChunk()
+    elif opt == '1.31': # group seg2D chunks
+        pipeline.segChunkToOne()
+    elif opt == '1.32': # group seg2D chunks: debug
+        pipeline.seg2DToChunkDecode()

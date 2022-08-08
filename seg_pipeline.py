@@ -44,6 +44,9 @@ class SegPipeline:
         self.out_seg2d = self.param_s['OUTPUT_FOLDER'] + self.param_s['SEG2D']['OUTPUT']
         self.out_seg2d_iou = self.param_s['OUTPUT_FOLDER'] + self.param_s['SEG2D']['OUTPUT_IOU']
         self.out_seg2d_rgz = self.param_s['OUTPUT_FOLDER'] + self.param_s['SEG2D']['OUTPUT_RGZ']
+        self.out_seg2d_chunk = self.param_s['OUTPUT_FOLDER'] + self.param_s['SEG2D']['OUTPUT_CHUNK']
+        self.out_seg2d_chunk_db = self.param_s['OUTPUT_FOLDER'] + self.param_s['SEG2D']['OUTPUT_CHUNK_DB']
+        self.out_seg2d_all = self.param_s['OUTPUT_FOLDER'] + self.param_s['SEG2D']['OUTPUT_ALL']
         mkdir(self.out_seg2d, 'parent')
 
     def setWorkerId(self, job_id, job_num):
@@ -69,7 +72,7 @@ class SegPipeline:
                     # writeH5('db.h5', mask_bv.astype(np.uint8))
                     mask_border = None if self.border_d is None else self.border_d.getZslice(zz)
                     seg, soma_rl = self._affinityToSeg2D(aff, mask_bv, mask_soma, mask_border)
-                    writeH5(sn, [seg, soma_rl, seg.max()], ['main','soma_rl', 'max'])
+                    writeH5(sn, [seg, soma_rl, np.array([seg.max()])], ['main','soma_rl', 'max'])
 
     def seg2DToIou(self):
         for zz in range(self.ran[0][0],self.ran[0][1]-1)[self.job_id::self.job_num]:
@@ -93,23 +96,144 @@ class SegPipeline:
             aff_zchunk = self.aff_d.getZchunk(zchunk, True)
             for z in range(self.chunk_sz[0]):
                 zz = z + zchunk
+                if zchunk == self.ran[0][1] - self.chunk_sz[0] and z == self.chunk_sz[0]-1:
+                    continue
                 sn1 = self.out_seg2d % (zz)
                 sn2 = self.out_seg2d % (zz+1)
                 sno = self.out_seg2d_rgz % (zz)
                 if not os.path.exists(sno):
+                    seg = np.concatenate([readH5(sn1, 'main'), readH5(sn2, 'main')], axis = 0) 
+                    seg_m = seg[0].max()
+                    # avoid rg_id switch position due to minmax
+                    seg[1][seg[1] > 0] += seg_m 
                     if (z+1) % self.chunk_sz[0] == 0: # last slice
-                        if zchunk == self.ran[0][1] - self.chunk_sz[0]:
-                            # not from last chunk
-                            continue
                         aff_zchunk = self.aff_d.getZchunk(zchunk + self.chunk_sz[0], True)
                         aff = self.aff_d.getZslice(aff_zchunk, [0], True)
                     else:
                         aff = self.aff_d.getZslice(aff_zchunk, [z+1], True)
                     aff = np.concatenate([np.zeros_like(aff), aff], axis=1)
-                    seg = np.concatenate([readH5(sn1, 'main'), readH5(sn2, 'main')], axis = 0) 
                     # only z-aff
                     rg_id, rg_score = waterz.getRegionGraph(aff, seg, 3, rg_m1_func, rebuild=False)
+                    rg_id[:,1] -= seg_m 
+                    # rg_id.max(axis=0),[seg[0].max(),seg[1].max()]
                     writeH5(sno, [rg_id, rg_score], ['id', 'score'])
+
+    def seg2DToChunk(self):
+        rg_m1_aff = self.param_s['SEG2D']['RG_MERGE_AFF']
+        for zchunk in range(self.ran[0][0],self.ran[0][1],self.chunk_sz[0])[self.job_id::self.job_num]:
+            snc = self.out_seg2d_chunk % zchunk 
+            if not os.path.exists(snc):
+                cc = np.zeros(1+self.chunk_sz[0], np.uint32)
+                for z in range(self.chunk_sz[0]):
+                    zz = z + zchunk
+                    sn = self.out_seg2d % (zz)
+                    cc[1+z] = readH5(sn, 'max')
+                cc = np.cumsum(cc).astype(np.uint32)
+                
+                matches = np.zeros([0,2], np.uint32)
+                soma_m = 0
+                #for z in range(14):
+                for z in range(self.chunk_sz[0]):
+                    zz = z + zchunk
+                    sno = self.out_seg2d_rgz % (zz)
+                    rg_id, rg_score = readH5(sno, ['id', 'score'])
+
+                    sn = self.out_seg2d % (zz)
+                    soma_rl = readH5(sn, 'soma_rl')
+                    rl = np.arange(soma_rl.max()+1).astype(np.uint32)
+                    rl[soma_rl[:,1]] = cc[-1] + soma_rl[:,0]
+                    rg_id[:,0] = rl[rg_id[:,0]] + cc[z]
+
+                    sn = self.out_seg2d % (zz+1)
+                    soma_rl = readH5(sn, 'soma_rl')
+                    rl = np.arange(soma_rl.max()+1).astype(np.uint32)
+                    rl[soma_rl[:,1]] = cc[-1] + soma_rl[:,0]
+                    rg_id[:,1] = rl[rg_id[:,1]] + cc[z+1]
+
+                    matches = np.vstack([matches, rg_id[rg_score <= rg_m1_aff]])
+                    soma_m = max(soma_m, soma_rl[:,0].max())
+                # remove pairs that lead to soma seg to merge
+                jj = waterz.somaBFS(matches, np.unique(matches[matches>cc[-1]]))
+                jj = np.vstack([jj, [cc[-1]+soma_m, cc[-1]+soma_m]]).astype(np.uint32)
+                # assign soma_id to big ids 
+                relabel = waterz.merge_id(jj[:,0], jj[:,1], id_thres = cc[-1]+1)
+                uid = np.unique(relabel[:cc[-1]+1])
+                rl = np.zeros(uid.max()+1, np.uint32)
+                rl[uid] = np.arange(1, 1+len(uid))
+                relabel = rl[relabel[:cc[-1]+1]]
+                writeH5(snc, [cc, relabel, np.array([1+len(uid), soma_m])], ['count', 'relabel', 'sid'])
+
+    def seg2DToChunkDecode(self):
+        for zchunk in range(self.ran[0][0],self.ran[0][1],self.chunk_sz[0])[self.job_id::self.job_num]:
+            snc = self.out_seg2d_chunk % zchunk 
+            count, relabel, sid = readH5(snc)
+            #import pdb; pdb.set_trace()
+            for z in range(self.chunk_sz[0]):
+                zz = z + zchunk
+                print(zz)
+                snd = self.out_seg2d_chunk_db % zz 
+                sno = self.out_seg2d_rgz % (zz)
+                rg_id, rg_score = readH5(sno, ['id', 'score'])
+
+                sn = self.out_seg2d % (zz)
+                soma_rl = readH5(sn, 'soma_rl')
+                rl = np.arange(soma_rl.max()+1).astype(np.uint32)
+                rl[soma_rl[:,1]] = count[-1] + soma_rl[:,0]
+
+                seg = rl[readH5(sn, 'main')]
+                seg[(seg>0)*(seg<=count[-1])] = relabel[seg[(seg>0)*(seg<=count[-1])]+count[z]]
+                writeH5(snd, seg)
+ 
+    def segChunkToAll(self):
+        rg_m1_aff = param['RG_MERGE_AFF']
+        sna = self.out_seg2d_all
+        if not os.path.exists(sna):
+            cc = np.zeros(1+(self.ran[0][1]-self.ran[0][0])//self.chunk_sz[0])
+            for zi,zchunk in enumerate(range(self.ran[0][0],self.ran[0][1],self.chunk_sz[0])):
+                snc = self.out_seg2d_chunk % zchunk 
+                cc[zi+1] = readH5(snc, 'sid')[0]
+            cc = np.cumsum(cc)
+
+            matches = np.zeros([0,2])
+            soma_m = 0
+            for zi,zchunk in enumerate(range(self.ran[0][0], self.ran[0][1]-self.chunk_sz[0], self.chunk_sz[0])):
+                sno = self.out_seg2d_rgz % (zchunk)
+                rg_id, rg_score = readH5(sno, ['id', 'score'])
+
+                sn = self.out_seg2d % (zchunk+self.chunk_sz[0]-1)
+                soma_rl = readH5(sn, 'soma_rl')
+                rl = np.arange(soma_rl.max()+1).astype(np.uint32)
+                rl[soma_rl[:,1]] = cc[-1] + soma_rl[:,0]
+                snc = self.out_seg2d_chunk % zchunk 
+                count, relabel = readH5(snc, ['count','relabel'])
+                gid = rg_id[:,0] < soma_rl[:,1].min()
+                rg_id[gid,0] = relabel[rg_id[gid,0]+count[-1]] + cc[zi]
+                rg_id[gid==0, 0] = rl[rg_id[gid==0,0]]
+                soma_m = max(soma_m, readH5(snc, 'sid')[1])
+
+                sn = self.out_seg2d % (zchunk+self.chunk_sz[0])
+                soma_rl = readH5(sn, 'soma_rl')
+                rl = np.arange(soma_rl.max()+1).astype(np.uint32)
+                rl[soma_rl[:,1]] = cc[-1] + soma_rl[:,0]
+                snc = self.out_seg2d_chunk % (zchunk+self.chunk_sz[0]) 
+                count, relabel = readH5(snc, ['count','relabel'])
+                gid = rg_id[:,1] < soma_rl[:,1].min()
+                rg_id[gid,1] = relabel[rg_id[gid,1]+count[0]] + cc[zi+1]
+                rg_id[gid==0, 1] = rl[rg_id[gid==0, 1]]
+                soma_m = max(soma_m, readH5(snc, 'sid')[1])
+
+                matches = np.vstack([matches, rg_id[rg_score <= rg_m1_aff]])
+            # remove pairs that lead to soma seg to merge
+            jj = waterz.somaBFS(matches, np.unique(matches[matches>cc[-1]]))
+            # assign soma_id to big ids 
+            jj = np.vstack([jj, [cc[-1]+soma_m, cc[-1]+soma_m]])
+            # assign soma_id to big ids 
+            relabel = waterz.merge_id(jj[:,0], jj[:,1], id_thres = cc[-1]+1)
+            uid = np.unique(relabel[:cc[-1]+1])
+            rl = np.zeros(uid.max()+1, np.uint32)
+            rl[uid] = np.arange(1, 1+len(uid))
+            relabel = rl[relabel[:cc[-1]+1]]
+            writeH5(sna, [cc, relabel, np.array([1+len(uid), soma_m])], ['count', 'relabel', 'sid'])
 
     def _affinityToSeg2D(self, aff, mask_bv=None, mask_soma=None, mask_border=None):
         # aff: 3x1xHxW

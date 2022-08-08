@@ -38,5 +38,8 @@ SEG :
         OUTPUT : "seg_2d/%04d.h5" 
         OUTPUT_IOU : "seg_2d/%04d_iou%s.h5" 
         OUTPUT_RGZ : "seg_2d/%04d_rgz.h5" 
+        OUTPUT_CHUNK : "seg_2d/%04d_chunk.h5" 
+        OUTPUT_ALL : "seg_2d/all.h5" 
+        OUTPUT_CHUNK_DB : "seg_2d/%04d_db.h5" 
 
 

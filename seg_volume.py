@@ -1,7 +1,8 @@
 import numpy as np
 import waterz
 import zwatershed
-from T_util import readh5,writeh5,adapted_rand,relabel,seg_postprocess
+from imu.io import readH5,writeH5
+from imu.seg import adapted_rand,relabel,seg_postprocess
 
 def affToSeg2d(aff_uint8, T_thres = 800, T_dust = 50, T_dust_merge = 0.2,T_mst_merge = 0.7, T_low=0.1, T_high=0.8, T_rel = True):
     zw2d = np.zeros(aff_uint8.shape[1:], np.uint32)
@@ -42,9 +43,9 @@ def segEval(seg, gt):
 
 if __name__ == "__main__":
     # load gt
-    test_gt = readh5('test-labels.h5')
+    test_gt = readH5('test-labels.h5')
     # load input affinity 
-    aff_uint8 = readh5('aff_xy.h5')
+    aff_uint8 = readH5('aff_xy.h5')
     ratio = 2
     wz_thres = [0.7]
 
