@@ -1,0 +1,14 @@
+DATA :
+    SIZE : [3302, 12800, 12800]
+    XRAN : [0,1694]
+    YRAN : [0,1660]
+    ZRAN : [0,1269]
+    TILE_SIZE : 2560
+    RESOLUTION : [60,60,60]
+
+MASK :
+    NUCLEUS : "/n/boslfs02/LABS/lichtman_lab/donglai/EM/lsp/seg_yt/"
+    NUCLEUS_FORMAT : "%04d"
+    NUCLEUS_EXT : "npy"
+    NUCLEUS_IOU : "iou/"
+    NUCLEUS_3D : "3d/"

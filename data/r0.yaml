@@ -1,17 +1,19 @@
 DATA :
-    SIZE : [3092, 13312, 13312]
-    XRAN : [556,13084]
-    YRAN : [556,13084]
-    ZRAN : [14,3074]
+    SIZE : [3302, 12800, 12800]
+    XRAN : [0,12800]
+    YRAN : [0,12800]
+    ZRAN : [0,3302]
     TILE_SIZE : 2560
     RESOLUTION : [30,8,8]
-    OUTPUT_ROOT: "/n/pfister_lab2/Lab/donglai/jwr/100um_2022/"
+    IMID : '/n/boslfs02/LABS/lichtman_lab/donglai/R0/im_id.txt'
+    OUTPUT_ROOT: "/n/boslfs02/LABS/lichtman_lab/donglai/R0/"
 
 MASK :
-    BLOOD_VESSEL : "/n/boslfs02/LABS/lichtman_lab/donglai/jwr15/bloodvessels/%04d.png"
+    BLOOD_VESSEL : "/n/boslfs02/LABS/lichtman_lab/donglai/R0/coarse_seg/coarse_seg.zip"
     BLOOD_VESSEL_RATIO : [1,8,8]
-    BLOOD_VESSEL_OFFSET : [13,512,512]
     BLOOD_VESSEL_EROSION : 0
+    BLOOD_VESSEL_OUT : "coarse_seg/coarse_seg_cc/"
+    CHUNK_SIZE : "coarse_seg/coarse_seg_cc/%04d.h5"
     # need more soma
     # SOMA : "/n/boslfs02/LABS/lichtman_lab/donglai/jwr15/nucleus/cell_db_cb_fix.h5"
     # SOMA_EROSION : 2
@@ -35,11 +37,3 @@ SEG :
         RG_MERGE_AFF : 1
         RG_MERGE2_SIZE : 500 # merge round2: size threshold
         RG_MERGE2_AFF : 127 # merge round2: affinity threshold
-        OUTPUT : "seg_2d/%04d.h5" 
-        OUTPUT_IOU : "seg_2d/%04d_iou%s.h5" 
-        OUTPUT_RGZ : "seg_2d/%04d_rgz.h5" 
-        OUTPUT_CHUNK : "seg_2d/%04d_chunk.h5" 
-        OUTPUT_ALL : "seg_2d/all.h5" 
-        OUTPUT_CHUNK_DB : "seg_2d/%04d_db.h5" 
-
-

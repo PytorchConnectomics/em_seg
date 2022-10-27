@@ -1,6 +1,6 @@
 from imageio import imread, imwrite
 import numpy as np
-import h5py
+from imu.io import readVol
 
 class FileLoader:
     def __init__(self, fns = []):
@@ -48,11 +48,4 @@ class MaskLoader:
         zz = (z + self.ratio[0]/2) // self.ratio[0] 
         # filename offset
         zz = int(zz + self.st[0])
-        if self.filename[-2:] == 'h5':
-            tmp = h5py.File(self.filename,'r')
-            out = np.array(tmp[list(tmp)[0]][zz])
-        elif self.filename[-3:] in ['jpg','png']:
-            out = imread(self.filename % zz)
-        elif self.filename[-3:] == 'txt':
-            out = np.loadtxt(self.filename % zz).astype(int)
-        return out
+        return readVol(self.filename, zz)
