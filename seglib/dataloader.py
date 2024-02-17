@@ -1,6 +1,6 @@
 from imageio import imread, imwrite
 import numpy as np
-from imu.io import readVol
+from emu.io import read_vol
 
 class FileLoader:
     def __init__(self, fns = []):
@@ -48,4 +48,4 @@ class MaskLoader:
         zz = (z + self.ratio[0]/2) // self.ratio[0] 
         # filename offset
         zz = int(zz + self.st[0])
-        return readVol(self.filename, zz)
+        return read_vol(self.filename, zz)

@@ -13,7 +13,6 @@ class SynapseP14(FileLoader):
         fns = []
         fns = ['/n/boslfs02/LABS/lichtman_lab/zudi/p14_syn/syn/result_%d-%d-%d-%d-%d-%d_syn.h5'%(z,zz[zi+1],y,yy[yi+1],x,xx[xi+1])]
         
-        alass SynapseP14(FileLoa
 class AffJWR15(AffinityLoader):
     def getZchunk(self, z):
         # yx aff
