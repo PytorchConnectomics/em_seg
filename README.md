@@ -1,9 +1,12 @@
-# em100
-segment 100 micron cube
+# seglib
 
 
 ```
-git clone git@github.com:donglaiw/ImUtil.git
-cd ImUtil/
+git clone git@github.com:PytorchConnectomics/EM-util.git
+cd EM-util/
+pip install --editable .
+cd ..
+
+git clone git@github.com:PytorchConnectomics/seglib.git
 pip install --editable .
 ```
