@@ -2,3 +2,4 @@ demo/temp
 *.swp
 .vscode
 build/
+seglib.egg-info/
