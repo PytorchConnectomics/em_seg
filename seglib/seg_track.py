@@ -1,28 +1,12 @@
 import numpy as np
 from skimage.morphology import remove_small_objects
-from skimage.segmentation import watershed
 from tqdm import tqdm
-from emu.io import read_vol, compute_bbox_all
-from emu.seg import seg_to_iou, seg_biggest_cc, seg_to_cc
+from emu.io import read_vol, compute_bbox_all, read_vol
 from .region_graph import merge_id
-
-
-
-def seg_to_global_id(filenames, index):
-    num_vol = get_file_number(filenames, index)
-    count = np.zeros(1 + num_vol, int)
-    for i in range(num_vol):
-        filename = get_filename(filenames, index, i)
-        count[i + 1] = read_vol(filename).max()
-    return np.cumsum(count)
-    
-
-
-
 
 def seg_to_iou(seg0, seg1, uid0=None, bb0=None, uid1=None, uc1=None):
     """
-    Compute the intersection over union (IoU) between segments in two segmentation maps.
+    Compute the intersection over union (IoU) between segments in two segmentation maps (2D or 3D).
 
     Args:
         seg0 (numpy.ndarray): The first segmentation map.
@@ -94,47 +78,98 @@ def seg_to_iou(seg0, seg1, uid0=None, bb0=None, uid1=None, uc1=None):
             out[j, 3] = uc1[uid1 == out[j, 1]]
             out[j, 4] = uc3.max()
     return out
-
-
-def vol_to_iou(seg3d, th_iou=0):
+def segs_to_iou(get_seg, index, th_iou=0):
+    # get_seg function:
     # raw iou result or matches
     ndim = 5 if th_iou == 0 else 2
-    out = [np.zeros([ndim, 0])] * (seg3d.shape[0] - 1)
-    bb_pre = compute_bbox_all(seg3d[0], True)
-    for z in range(seg3d.shape[0] - 1):
-        bb_new = compute_bbox_all(seg3d[z + 1], True)
-        if bb_pre is not None and bb_new is not None:
-            iou = seg_to_iou(seg3d[z], seg3d[z + 1], bb0=bb_pre, uid1=bb_new[:,0], uc1=bb_new[:,-1])
-            if iou is not None:
-                if th_iou == 0:
-                    out[z] = iou.T
-                else:
-                    # remove matches to 0
-                    iou = iou[iou[:, 1] != 0]
-                    sc = iou[:, 4].astype(float) / (
-                        iou[:, 2] + iou[:, 3] - iou[:, 4]
-                    )
-                    gid = sc > th_iou
-                    out[z] = iou[gid, :2].T
-        bb_pre = bb_new
-    return np.hstack(out)
+    out = [[]] * (len(index) - 1)
+    seg0 = get_seg(index[0])
+    bb0 = compute_bbox_all(seg0, True)
+    out =[[]] * (len(index) - 1)
+    for i, z in enumerate(index[1:]):
+        seg1 = get_seg(z)
+        bb1 = compute_bbox_all(seg1, True)    
+        iou = seg_to_iou(seg0, seg1, bb0=bb0, uid1=bb1[:, 0], uc1=bb1[:, -1])    
+        if th_iou == 0:
+            # store all iou
+            out[i] = iou.T
+        else:
+            # store matches
+            # remove background seg id            
+            iou = iou[iou[:, 1] != 0]
+            score = iou[:, 4].astype(float) / (
+                iou[:, 2] + iou[:, 3] - iou[:, 4]
+            )
+            gid = score > th_iou
+            out[i] = iou[gid, :2].T
+        bb0 = bb1       
+    return out
 
+def segs_to_global_id(get_seg, index):
+    count = np.zeros(1 + len(index), int)
+    for i, ind in enumerate(index):
+        count[i + 1] = get_seg(ind).max()
+    return np.cumsum(count)
 
-def iou_to_matches(fn_iou, im_id, global_id=None, th_iou=0.1):
+def seg2d_vol_to_iou2d(seg_vol, th_iou=0):
+    get_seg = lambda z: seg_vol[z]
+    index = range(seg_vol.shape[0])
+    return segs_to_iou(get_seg, index, th_iou)
+
+def seg_list_to_iou(seg_list, th_iou=0):    
+    get_seg = lambda z: read_vol(seg_list[z]) if isinstance(seg_list[z], str) else seg_list[z]
+    index = range(len(seg_list))
+    return segs_to_iou(get_seg, index, th_iou)
+
+def seg_list_to_global_id(seg_list):
+    get_seg = lambda z: read_vol(seg_list[z]) if isinstance(seg_list[z], str) else seg_list[z]
+    index = range(len(seg_list))
+    return segs_to_global_id(get_seg, index)
+
+def ious_to_global_id(get_iou, index, return_count=False):
+    count = [0] + [[]] * len(index) 
+    for i, ind in enumerate(index):
+        iou = get_iou(ind)
+        if not isinstance(iou, list):
+            iou = [iou]
+        count[i + 1] = np.zeros(len(iou))
+        for j in range(len(count)):
+            count[i + 1][j] = iou[j][:,0].max()
+    count = np.hstack(count)
+    return count[1:] if return_count else np.cumsum(count)
+
+def ious_to_matches(get_iou, index, th_iou=0.1, global_id=None):
     # assume each 2d seg id is not overlapped
-    mm = [None] * (len(im_id))
-    for z in tqdm(range(len(im_id))):
-        iou = read_vol(fn_iou % im_id[z])
-        sc = iou[:, 4].astype(float) / (iou[:, 2] + iou[:, 3] - iou[:, 4])
-        gid = sc > th_iou
-        mm[z] = iou[gid, :2].T
-        if global_id is not None:
-            mm[z][0] += global_id[z]
-            mm[z][1] += global_id[z + 1]
-    return np.hstack(mm)
+    matches = [[]] * (len(index))
+    chunk_st = 0
+    for i, ind in enumerate(index):
+        iou = get_iou(ind)
+        if not isinstance(iou, list):
+            iou = [iou]
+        matches_i = [[]] * len(iou) 
+        chunk_lt = chunk_st + len(iou)
+        for j in range(len(iou)):
+            sc = iou[j][:, 4].astype(float) / (iou[j][:, 2] + iou[j][:, 3] - iou[j][:, 4])
+            gid = sc > th_iou
+            matches_i[j] = iou[j][gid, :2].T
+            if global_id is not None:
+                matches_i[j][0] += global_id[chunk_st : chunk_lt][i]
+                matches_i[j][1] += global_id[chunk_st : chunk_lt][i + 1]
+        matches[i] = np.vstack(matches_i)
+        chunk_st = chunk_lt
+    return np.vstack(matches)
 
+def iou_list_to_global_id(iou_list):
+    get_iou = lambda z: read_vol(iou_list[z]) if isinstance(iou_list[z], str) else iou_list[z]
+    index = range(len(iou_list))
+    return ious_to_global_id(get_iou, index)
 
-def seg2d_mapping(seg, mapping):
+def iou_list_to_matches(iou_list, th_iou=0.1, global_id=None):
+    get_iou = lambda z: read_vol(iou_list[z]) if isinstance(iou_list[z], str) else iou_list[z]
+    index = range(len(iou_list))
+    return ious_to_global_id(get_iou, index, th_iou, global_id)
+
+def seg_to_remapped(seg, mapping):
     mapping_len = np.uint64(len(mapping))
     mapping_max = mapping.max()
     ind = seg < mapping_len
@@ -144,20 +179,22 @@ def seg2d_mapping(seg, mapping):
     )  # if beyond mapping range, shift left
     return seg
 
-
-def seg2d_to_global_id(seg, mapping=None, mid=None, th_sz=-1):
+def track_seg2d_vol(seg2d_vol, mapping=None, matches=None, global_id=None, iou=None, th_iou=0.1, th_sz=-1):
+    # parallel version: demo/track_seg2d_list.py
+    # assume can't load all seg2d into a volume
+    if global_id is None:
+        if iou is None:
+            iou = seg2d_vol_to_iou2d(seg2d_vol)
+        global_id = iou_list_to_global_id(iou) 
     if mapping is None:
-        mid = mid.astype(np.uint32)
-        mapping = merge_id(mid[0], mid[1])
+        if matches is None:
+            matches = iou_list_to_matches(iou, th_iou, global_id)
+        matches = matches.astype(np.uint32)
+        mapping = merge_id(matches[0], matches[1])
+    
+    for z in range(seg2d_vol.shape[0]):
+        seg2d_vol[z] = seg_to_remapped(seg2d_vol[z] + global_id[z], mapping)
 
-    seg = seg2d_mapping(seg, mapping)
     if th_sz > 0:
-        seg = remove_small_objects(seg, th_sz)
-    return seg
-
-
-def seg2d_to_3d(seg, matches=None, iou=None, th_iou=0.1, th_sz=-1):
-    if matches is None:
-        matches = iou_to_matches(iou, th_iou)
-    seg = seg2d_to_global_id(seg, mid=matches, th_sz=th_sz)
-    return seg
+        seg2d_vol = remove_small_objects(seg2d_vol, th_sz)
+    return seg2d_vol
