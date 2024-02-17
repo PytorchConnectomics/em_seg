@@ -1,5 +1,5 @@
 Metadata-Version: 2.1
-Name: erl
+Name: seglib
 Version: 0.1
 Summary: Useful functions for segmentation
 Home-page: https://github.com/PytorchConnectomics/seglib

@@ -32,13 +32,13 @@ def setup_package(no_cython=True):
                 'emu/seg/*.pyx',
             ]}
     setup(
-        name="erl",
+        name="seglib",
         description="Useful functions for segmentation",
         version=__version__,
         url=url,
         license="MIT",
         author="Donglai Wei",
-        install_requires=["scipy", "cython", "numpy", "h5py", "imageio", "argparse"],
+        install_requires=["scipy", "cython", "numpy", "h5py", "imageio", "argparse", "scikit-image"],
         include_dirs=getInclude(), 
         packages=find_packages(),        
         package_data=package_data,
