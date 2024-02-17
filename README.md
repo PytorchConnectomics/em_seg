@@ -14,6 +14,7 @@ cd ..
 
 git clone git@github.com:PytorchConnectomics/seglib.git
 cd seglib
-conda install pip cython numpy
 pip install --editable .
+# optional for c++ package
+python setup.py build_ext --inplace
 ```

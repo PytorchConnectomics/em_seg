@@ -1,9 +1,9 @@
 import os, sys
 from distutils.sysconfig import get_python_inc
 from setuptools import setup, find_packages, Extension
-import numpy as np
 
 def getInclude():
+    import numpy as np
     dirName = get_python_inc()
     return [dirName, os.path.dirname(dirName), np.get_include()]
 
@@ -16,10 +16,6 @@ def getExtension():
             extra_link_args=['-std=c++11'],
             extra_compile_args=['-std=c++11'])]
     return extensions
-
-def setup_package(no_cython=True):
-    __version__ = '0.1'
-    url = 'https://github.com/donglaiw/emutil'
 
 def setup_package(no_cython=True):
     """Required packages"""
