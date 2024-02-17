@@ -1,5 +1,4 @@
 import numpy as np
-import h5py
 import scipy.sparse as sparse
 from scipy.ndimage.morphology import binary_fill_holes
 
