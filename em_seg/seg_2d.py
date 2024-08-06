@@ -7,15 +7,23 @@ from skimage.feature import peak_local_max
 from skimage.filters import threshold_otsu
 from skimage.segmentation import watershed
 
-from emu.io import get_kwarg
-from . import seg_to_cc, seg_biggest_cc
+from emu.io import get_kwarg, seg_biggest_cc, seg_to_cc
+
 
 def get_seg_kwargs(option, **kwargs):
-    if option == 'binary_post':
-        kw = ['num_open', 'num_close', 'T_small', 'fill_holes']
-    elif option == 'zwatershed':
-        kw = ['T_thres', 'T_dust', 'T_dust_merge', 'T_mst_merge', 'T_low', 'T_high', 'T_rel'] 
-    
+    if option == "binary_post":
+        kw = ["num_open", "num_close", "T_small", "fill_holes"]
+    elif option == "zwatershed":
+        kw = [
+            "T_thres",
+            "T_dust",
+            "T_dust_merge",
+            "T_mst_merge",
+            "T_low",
+            "T_high",
+            "T_rel",
+        ]
+
     return [get_kwarg(kwargs, x) for x in kw]
 
 
@@ -25,15 +33,18 @@ def pred_to_binary(pred, threshold=None):
     if threshold is None:
         threshold = threshold_otsu(pred[pred > 0])
     return pred >= threshold
-    
-def binary_postprocessing(seg, num_open=None, num_close=None, T_small=None, fill_holes=None):
-    if num_open is not None:    
+
+
+def binary_postprocessing(
+    seg, num_open=None, num_close=None, T_small=None, fill_holes=None
+):
+    if num_open is not None:
         seg = binary_opening(seg, iterations=num_open)
     if num_close is not None:
         seg = binary_opening(seg, iterations=num_close)
 
-    if T_small is not None:            
-        if T_small > 0: 
+    if T_small is not None:
+        if T_small > 0:
             seg = remove_small_objects(seg, T_small)
         else:
             # if T_small is negative, keep the largest
@@ -42,40 +53,65 @@ def binary_postprocessing(seg, num_open=None, num_close=None, T_small=None, fill
         seg = binary_fill_holes(seg)
     return seg
 
+
 ## 2. instance segmentation
 def pred_watershed(pred, T_marker=0.5, peak_size=None, T_fg=None):
     # https://scikit-image.org/docs/stable/auto_examples/segmentation/plot_watershed.html
     if peak_size is None:
-        peak_size = [11,11]
-    marker_mask = pred_to_binary(pred, T_marker)    
+        peak_size = [11, 11]
+    marker_mask = pred_to_binary(pred, T_marker)
     distance = ndi.distance_transform_cdt(marker_mask)
-    marker_maxima = peak_local_max(distance, indices=False, footprint=np.ones((peak_size, peak_size)), labels=image)
+    marker_maxima = peak_local_max(
+        distance, indices=False, footprint=np.ones((peak_size, peak_size)), labels=image
+    )
     markers = seg_to_cc(marker_maxima)
     marker_fg = marker_mask if T_fg is None else pred >= T_marker
     return watershed(-distance, markers, mask=marker_fg)
-    
+
 
 def boundary_watershed(boundary, peak_size=None, seg_fg=None):
     if peak_size is None:
-        peak_size = [11,11]
+        peak_size = [11, 11]
     distance = ndi.distance_transform_cdt(boundary)
-    maxima = peak_local_max(distance, indices=False,footprint=np.ones([peak_size, peak_size]))
+    maxima = peak_local_max(
+        distance, indices=False, footprint=np.ones([peak_size, peak_size])
+    )
     markers = seg_to_cc(maxima)
     return watershed(-distance, markers)
-                
-def aff_zwatershed(aff, T_thres = 800, T_dust = 50, T_dust_merge = 0.2,T_mst_merge = 0.7, T_low=0.1, T_high=0.8, T_rel = True):
+
+
+def aff_zwatershed(
+    aff,
+    T_thres=800,
+    T_dust=50,
+    T_dust_merge=0.2,
+    T_mst_merge=0.7,
+    T_low=0.1,
+    T_high=0.8,
+    T_rel=True,
+):
     import zwatershed
+
     T_thres = 800 if T_thres is None else T_thres
-    T_dust = 50 if T_dust is None else T_dust    
+    T_dust = 50 if T_dust is None else T_dust
     T_dust_merge = 0.2 if T_dust_merge is None else T_dust_merge
-    T_mst_merge = 800 if T_mst_merge is None else T_mst_merge        
+    T_mst_merge = 800 if T_mst_merge is None else T_mst_merge
     T_low = 0.1 if T_low is None else T_low
-    T_high = 0.8 if T_high is None else T_high        
+    T_high = 0.8 if T_high is None else T_high
     T_rel = True if T_rel is None else T_rel
-        
+
     if aff.dtype == np.uint8:
-        aff = aff.astype(np.float32)/ 255
-    return zwatershed.zwatershed(aff, T_threshes=[T_thres], T_dust=T_dust, T_aff=[T_low,T_high,T_dust_merge], T_aff_relative=T_rel, T_merge=T_mst_merge)[0][0][0]
+        aff = aff.astype(np.float32) / 255
+    return zwatershed.zwatershed(
+        aff,
+        T_threshes=[T_thres],
+        T_dust=T_dust,
+        T_aff=[T_low, T_high, T_dust_merge],
+        T_aff_relative=T_rel,
+        T_merge=T_mst_merge,
+    )[0][0][0]
+
+
 def probToInstanceSeg_cc(probability, thres_prob=0.8, thres_small=128):
     # connected component
     if probability.max() > 1:

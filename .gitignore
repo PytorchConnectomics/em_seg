@@ -139,3 +139,5 @@ build/
 seglib.egg-info/
 demo/temp
 seglib/region_graph.cpp
+*.out
+*.err

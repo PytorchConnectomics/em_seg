@@ -1,7 +1,8 @@
 import os
 import numpy as np
-from . import seg_to_iou, merge_id
-from emu.io import read_h5, write_h5, compute_all_bbox, write_image_folder
+from .seg_track import seg_to_iou
+from .region_graph import merge_id
+from emu.io import read_h5, write_h5, compute_bbox_all, write_image_folder
 
 
 class seg_chunk_stitcher(object):
@@ -80,25 +81,19 @@ class seg_chunk_stitcher(object):
                             if fn_count is not None:
                                 stat = read_h5(fn_count % (zi, yi, xi))
                                 rl = np.zeros(stat[:, 0].max() + 1, np.uint32)
-                                rl[stat[:, 0]] = offset[
-                                    zi, yi, xi
-                                ] + np.arange(1, stat.shape[0] + 1)
+                                rl[stat[:, 0]] = offset[zi, yi, xi] + np.arange(
+                                    1, stat.shape[0] + 1
+                                )
                                 seg[:, 0] = rl[seg[:, 0]]
-                                stat_next = read_h5(
-                                    fn_count % (zi, yi + 1, xi)
-                                )
-                                rl_next = np.zeros(
-                                    stat_next[:, 0].max() + 1, np.uint32
-                                )
+                                stat_next = read_h5(fn_count % (zi, yi + 1, xi))
+                                rl_next = np.zeros(stat_next[:, 0].max() + 1, np.uint32)
                                 rl_next[stat_next[:, 0]] = offset[
                                     zi, yi + 1, xi
                                 ] + np.arange(1, stat_next.shape[0] + 1)
                                 seg[:, 1] = rl_next[seg[:, 1]]
                             seg_diff = (seg > 0).min(axis=1)
                             mid = np.unique(
-                                np.vstack(
-                                    [seg[:, 0][seg_diff], seg[:, 1][seg_diff]]
-                                ).T,
+                                np.vstack([seg[:, 0][seg_diff], seg[:, 1][seg_diff]]).T,
                                 axis=0,
                             ).astype(seg.dtype)
                             mid_all = np.vstack([mid_all, mid])
@@ -113,12 +108,8 @@ class seg_chunk_stitcher(object):
                             )
                             if fn_count is not None:
                                 seg[:, :, 0] = rl[seg[:, :, 0]]
-                                stat_next = read_h5(
-                                    fn_count % (zi, yi, xi + 1)
-                                )
-                                rl_next = np.zeros(
-                                    stat_next[:, 0].max() + 1, np.uint32
-                                )
+                                stat_next = read_h5(fn_count % (zi, yi, xi + 1))
+                                rl_next = np.zeros(stat_next[:, 0].max() + 1, np.uint32)
                                 rl_next[stat_next[:, 0]] = offset[
                                     zi, yi + 1, xi
                                 ] + np.arange(1, stat_next.shape[0] + 1)
@@ -149,9 +140,7 @@ class seg_chunk_stitcher(object):
             for yi in range(self.ynum):
                 for xi in range(self.xnum):
                     if yi != self.ynum - 1 or xi != self.xnum - 1:
-                        mid = np.vstack(
-                            [mid, read_h5(fn_mid_xy % (zi, yi, xi))]
-                        )
+                        mid = np.vstack([mid, read_h5(fn_mid_xy % (zi, yi, xi))])
 
         rl = merge_id(mid[:, 0].astype(np.uint32), mid[:, 1].astype(np.uint32))
         write_h5(fn_mid_xy_all, rl)
@@ -202,9 +191,7 @@ class seg_chunk_stitcher(object):
                             seg[0] = rl[seg[0]]
 
                             stat_next = read_h5(fn_count % (zi, yi + 1, xi))
-                            rl_next = np.zeros(
-                                stat_next[:, 0].max() + 1, np.uint32
-                            )
+                            rl_next = np.zeros(stat_next[:, 0].max() + 1, np.uint32)
                             rl_next[stat_next[:, 0]] = offset[
                                 zi, yi + 1, xi
                             ] + np.arange(1, stat_next.shape[0] + 1)
@@ -226,20 +213,22 @@ class seg_chunk_stitcher(object):
                             - self.xran[0],
                         ] = rl_xy[seg[1]]
                 mid = np.zeros([0, 2], np.uint32)
-                bb0 = compute_all_bbox(seg_z0, True)
-                bb1 = compute_all_bbox(seg_z1, True)
-                
-                iou_f = seg_to_iou(seg_z0, seg_z1, bb0=bb0, uid1=bb1[:,0], uc1=bb1[:,-1])
+                bb0 = compute_bbox_all(seg_z0, True)
+                bb1 = compute_bbox_all(seg_z1, True)
+
+                iou_f = seg_to_iou(
+                    seg_z0, seg_z1, bb0=bb0, uid1=bb1[:, 0], uc1=bb1[:, -1]
+                )
                 rr = iou_f[:, -1] / (iou_f[:, -3:-1].max(axis=1).astype(float))
                 mid = np.vstack([mid, iou_f[rr >= iou_thres, :2]])
 
-                iou_b = seg_to_iou(seg_z1, seg_z0, bb0=bb1, uid1=bb0[:,0], uc1=bb0[:,-1])
+                iou_b = seg_to_iou(
+                    seg_z1, seg_z0, bb0=bb1, uid1=bb0[:, 0], uc1=bb0[:, -1]
+                )
                 rr = iou_b[:, -1] / (iou_b[:, -3:-1].max(axis=1).astype(float))
                 mid = np.vstack([mid, iou_b[rr >= iou_thres, :2]])
 
-                mid = np.unique(
-                    np.vstack([mid.min(axis=1), mid.max(axis=1)]).T, axis=0
-                )
+                mid = np.unique(np.vstack([mid.min(axis=1), mid.max(axis=1)]).T, axis=0)
                 write_h5(sn, mid)
 
     def section_merge_z_all(self, fn_mid_z, fn_mid_z_all, max_id=-1):
@@ -288,12 +277,12 @@ class seg_chunk_stitcher(object):
 
                     seg_z[
                         :,
-                        self.yran[yi]
-                        - self.yran[0] : self.yran[yi + 1]
-                        - self.yran[0],
-                        self.xran[xi]
-                        - self.xran[0] : self.xran[xi + 1]
-                        - self.xran[0],
+                        self.yran[yi] - self.yran[0] : self.yran[yi + 1] - self.yran[0],
+                        self.xran[xi] - self.xran[0] : self.xran[xi + 1] - self.xran[0],
                     ] = rl_z[rl_xy[seg]]
-            write_image_folder(fn_out,  seg_z[self.zran[zi]: self.zran[zi + 1]], \
-                range(self.zran[zi], self.zran[zi + 1]), 'seg')
+            write_image_folder(
+                fn_out,
+                seg_z[self.zran[zi] : self.zran[zi + 1]],
+                range(self.zran[zi], self.zran[zi + 1]),
+                "seg",
+            )

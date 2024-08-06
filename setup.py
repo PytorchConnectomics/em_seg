@@ -10,8 +10,8 @@ def getInclude():
 def getExtension():
     extensions = []
     extensions += [Extension(
-            'seglib.region_graph',
-            sources=['seglib/region_graph.pyx', 'seglib/cpp/region_graph.cpp'],
+            'em_seg.region_graph',
+            sources=['em_seg/region_graph.pyx', 'em_seg/cpp/region_graph.cpp'],
             language='c++',
             extra_link_args=['-std=c++11'],
             extra_compile_args=['-std=c++11'])]
@@ -20,7 +20,7 @@ def getExtension():
 def setup_package(no_cython=True):
     """Required packages"""
     __version__ = "0.1"
-    url = "https://github.com/PytorchConnectomics/seglib"
+    url = "https://github.com/PytorchConnectomics/em_seg"
     exts = [] 
     package_data = {}
     if not no_cython:
@@ -32,7 +32,7 @@ def setup_package(no_cython=True):
                 'emu/seg/*.pyx',
             ]}
     setup(
-        name="seglib",
+        name="em_seg",
         description="Useful functions for segmentation",
         version=__version__,
         url=url,
